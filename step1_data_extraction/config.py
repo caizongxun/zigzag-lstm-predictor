@@ -1,15 +1,48 @@
-import os
+"""
+Configuration Module for Step 1 Data Extraction
+"""
 
-STEP1_CONFIG = {
-    'hf_dataset_id': 'zongowo111/v2-crypto-ohlcv-data',
-    'hf_token': os.getenv('HF_TOKEN', ''),
-    'base_path': 'klines',
-    'test_symbol': 'BTCUSDT',
-    'test_timeframes': ['15m', '1h'],
-    'output_dir': './step1_output',
-    'output_format': 'csv',
-    'chunk_size': 10000,
-}
+import os
+from pathlib import Path
+
+
+class Config:
+    """
+    Configuration class for data extraction pipeline.
+    """
+    
+    def __init__(self):
+        """Initialize configuration."""
+        self.project_root = Path(__file__).parent.parent
+        
+        self.dataset_id = os.getenv('HF_DATASET_ID', 'zongowo111/v2-crypto-ohlcv-data')
+        self.hf_token = os.getenv('HF_TOKEN', '')
+        
+        self.output_dir = './step1_output'
+        Path(self.output_dir).mkdir(parents=True, exist_ok=True)
+        
+        self.symbols = ['BTCUSDT']
+        self.timeframes = ['15m', '1h']
+        
+        self.loader_config = {
+            'dataset_id': self.dataset_id,
+            'symbols': self.symbols,
+            'timeframes': self.timeframes,
+            'cache_dir': './hf_cache',
+            'max_retries': 3,
+            'timeout': 300
+        }
+        
+        self.cleaner_config = {
+            'fill_limit': 5,
+            'remove_duplicates': True
+        }
+        
+        self.validator_config = {
+            'allow_missing_percent': 5.0,
+            'allow_zero_volume_percent': 20.0
+        }
+
 
 DATASET_SYMBOLS = [
     'BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'XRPUSDT', 'ADAUSDT',
@@ -18,3 +51,5 @@ DATASET_SYMBOLS = [
     'NEARUSDT', 'ATOMUSDT', 'SUIUSDT', 'LUNCUSDT', 'GALAUSDT',
     'MANAUSDT', 'PEPEUSDT'
 ]
+
+DATASET_TIMEFRAMES = ['15m', '1h']
