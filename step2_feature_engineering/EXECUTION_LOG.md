@@ -1,285 +1,194 @@
-# Step 2: Feature Engineering Execution Log
+# Step 2 Feature Engineering - Execution Log
 
 ## Overview
 
-This document logs the execution details of the feature engineering pipeline for the Zigzag LSTM Predictor system.
+This document logs the execution of the feature engineering pipeline (Step 2).
 
-## System Configuration
+## Processing Configuration
 
 ### Zigzag Configuration
 - Threshold: 5.0%
-- Lookback Period: 20 bars
-- Trend Detection Method: Percentage-based reversal
-
-### Technical Indicators (13 Features)
-1. **rsi_14**: Relative Strength Index (14-period)
-2. **macd**: MACD Line (12-26)
-3. **macd_signal**: MACD Signal Line (9-period EMA)
-4. **macd_histogram**: MACD Histogram (MACD - Signal)
-5. **atr_14**: Average True Range (14-period)
-6. **high_low_ratio**: (High - Low) / Low * 100
-7. **close_range**: (Close - Low) / (High - Low)
-8. **highest_20**: Highest price in 20-period window
-9. **lowest_20**: Lowest price in 20-period window
-10. **volume_sma_20**: Volume Simple Moving Average (20-period)
-11. **volume_ratio**: Current Volume / Volume SMA
-12. **returns**: Log returns of close price
-13. **returns_volatility**: Standard deviation of returns (20-period)
+- Lookback: 20 bars
 
 ### Sequence Configuration
 - Sequence Length: 30 bars
-- Train/Val/Test Split: 70% / 15% / 15%
-- Normalization: StandardScaler (Z-score)
+- Train Split: 70%
+- Validation Split: 15%
+- Test Split: 15%
+- Normalize: True
 
-## Processing Steps
+### Technical Indicators (13 Features)
+1. RSI (14)
+2. MACD line
+3. MACD Signal
+4. MACD Histogram
+5. ATR (14)
+6. High-Low Ratio
+7. Close Range
+8. Highest (20)
+9. Lowest (20)
+10. Volume SMA (20)
+11. Volume Ratio
+12. Log Returns
+13. Returns Volatility (20)
 
-### Step 1: Data Loading
-- Input Path: `C:\Users\zong\PycharmProjects\zigzag-lstm-predictor\step1_data_extraction\step1_output\`
-- Files Processed:
-  - BTC_15m.csv: 15-minute candles
-  - BTC_1h.csv: 1-hour candles
+## Execution Summary
 
-### Step 2: Zigzag Calculation
+### BTC_15m Dataset
 
-The Zigzag algorithm implements percentage-based turning point detection:
+#### Data Loading
+- Raw samples: [To be filled]
+- Time span: [To be filled]
+- Missing values: [To be filled]
 
-**Algorithm Logic:**
-1. Initialize trend tracking (up/down)
-2. For each candle:
-   - Track highest high in uptrend, lowest low in downtrend
-   - When reverse movement exceeds threshold%, mark turning point
-   - Switch trend direction
-3. Label as HH (High-High) or LL (Low-Low)
+#### Zigzag Analysis
+- Total turning points: [To be filled]
+- HH (Higher High): [To be filled] ([To be filled]%)
+- LL (Lower Low): [To be filled] ([To be filled]%)
+- HL (Higher Low): [To be filled] ([To be filled]%)
+- LH (Lower High): [To be filled] ([To be filled]%)
+- Trend Continuation Ratio: [To be filled]%
+- Trend Reversal Ratio: [To be filled]%
 
-**Data Validation:**
-- Checks for missing values in OHLC data
-- Forward fills if necessary
-- Validates point indices consistency
+#### Feature Extraction
+- Features created: [To be filled] features
+- Missing values after extraction: [To be filled]
+- NaN handling method: Forward fill
 
-### Step 3: Technical Indicator Calculation
+#### Normalization (StandardScaler)
+- Scaler fit on training data: Yes
+- Mean after normalization: [To be filled]
+- Std after normalization: [To be filled]
 
-All indicators use vectorized NumPy operations for performance:
+#### Classification Labels (HH/LL/HL/LH)
+- Total raw labels: [To be filled]
+- Valid labels (not -1): [To be filled] ([To be filled]%)
+- Invalid labels (no next point): [To be filled]
 
-**RSI Calculation:**
-```
-RS = Average Gain / Average Loss
-RSI = 100 - (100 / (1 + RS))
-```
-- Uses exponential smoothing of gains/losses
-- 14-period standard
+**Class Distribution:**
+- Class 0 (HH): [To be filled] ([To be filled]%)
+- Class 1 (LL): [To be filled] ([To be filled]%)
+- Class 2 (HL): [To be filled] ([To be filled]%)
+- Class 3 (LH): [To be filled] ([To be filled]%)
+- Class Balance Ratio: [To be filled]
 
-**MACD Calculation:**
-```
-MACD = EMA(12) - EMA(26)
-Signal = EMA(9) of MACD
-Histogram = MACD - Signal
-```
-- EMA multiplier: 2 / (period + 1)
+#### Regression Labels (Distance to Next Point)
+- Total raw labels: [To be filled]
+- Valid labels: [To be filled] ([To be filled]%)
+- Invalid labels: [To be filled]
+- Mean distance: [To be filled] bars
+- Std distance: [To be filled] bars
+- Min distance: [To be filled] bars
+- Max distance: [To be filled] bars
+- Median distance: [To be filled] bars
 
-**ATR Calculation:**
-```
-True Range = max(H-L, abs(H-PC), abs(L-PC))
-ATR = EMA of True Range
-```
-- Captures volatility regardless of gap
+#### Sequence Creation
+- Sequence length: 30 bars
+- Total sequences: [To be filled]
+- X_class shape: [To be filled]
+- y_class shape: [To be filled]
+- X_reg shape: [To be filled]
+- y_reg shape: [To be filled]
 
-**Additional Features:**
-- High-Low ratio: Market range normalized by low
-- Close Range: Close position within daily range (0-1)
-- Highest/Lowest: Extreme values over lookback period
-- Volume Indicators: Current volume vs SMA ratio
-- Returns: Log returns for momentum capture
-- Volatility: Rolling standard deviation of returns
+#### Feature Statistics
 
-### Step 4: Feature Normalization
+| Feature | Mean | Std | Min | Max | Median | Missing |
+|---------|------|-----|-----|-----|--------|----------|
+| rsi_14 | [To be filled] | [To be filled] | [To be filled] | [To be filled] | [To be filled] | [To be filled] |
+| macd | [To be filled] | [To be filled] | [To be filled] | [To be filled] | [To be filled] | [To be filled] |
+| macd_signal | [To be filled] | [To be filled] | [To be filled] | [To be filled] | [To be filled] | [To be filled] |
+| macd_histogram | [To be filled] | [To be filled] | [To be filled] | [To be filled] | [To be filled] | [To be filled] |
+| atr_14 | [To be filled] | [To be filled] | [To be filled] | [To be filled] | [To be filled] | [To be filled] |
+| high_low_ratio | [To be filled] | [To be filled] | [To be filled] | [To be filled] | [To be filled] | [To be filled] |
+| close_range | [To be filled] | [To be filled] | [To be filled] | [To be filled] | [To be filled] | [To be filled] |
+| highest_20 | [To be filled] | [To be filled] | [To be filled] | [To be filled] | [To be filled] | [To be filled] |
+| lowest_20 | [To be filled] | [To be filled] | [To be filled] | [To be filled] | [To be filled] | [To be filled] |
+| volume_sma_20 | [To be filled] | [To be filled] | [To be filled] | [To be filled] | [To be filled] | [To be filled] |
+| volume_ratio | [To be filled] | [To be filled] | [To be filled] | [To be filled] | [To be filled] | [To be filled] |
+| returns | [To be filled] | [To be filled] | [To be filled] | [To be filled] | [To be filled] | [To be filled] |
+| returns_volatility | [To be filled] | [To be filled] | [To be filled] | [To be filled] | [To be filled] | [To be filled] |
 
-**Method: StandardScaler (Z-score Normalization)**
+#### Output Files
+- BTC_15m_X_sequences.npy: [To be filled] bytes
+- BTC_15m_y_class.npy: [To be filled] bytes
+- BTC_15m_y_reg.npy: [To be filled] bytes
+- BTC_15m_scaler.pkl: [To be filled] bytes
+- BTC_15m_zigzag_points.json: [To be filled] points
+- BTC_15m_statistics.json: Complete statistics
 
-Formula: `(x - mean) / std`
+### BTC_1h Dataset
 
-**Advantages over MinMax scaling:**
-- Better handling of outliers
-- Suitable for bell-curve distributed data
-- ~10% accuracy improvement typical for LSTM
-- Maintains variable relationships
+#### Data Loading
+- Raw samples: [To be filled]
+- Time span: [To be filled]
+- Missing values: [To be filled]
 
-**Validation:**
-- Mean: ~0.0
-- Standard Deviation: ~1.0
-- No NaN values after normalization
+#### Zigzag Analysis
+- Total turning points: [To be filled]
+- HH (Higher High): [To be filled] ([To be filled]%)
+- LL (Lower Low): [To be filled] ([To be filled]%)
+- HL (Higher Low): [To be filled] ([To be filled]%)
+- LH (Lower High): [To be filled] ([To be filled]%)
+- Trend Continuation Ratio: [To be filled]%
+- Trend Reversal Ratio: [To be filled]%
 
-### Step 5: Sequence Creation and Labeling
+#### Feature Extraction
+- Features created: [To be filled] features
+- Missing values after extraction: [To be filled]
 
-**Label Generation:**
+#### Normalization (StandardScaler)
+- Scaler fit on training data: Yes
+- Mean after normalization: [To be filled]
+- Std after normalization: [To be filled]
 
-**Classification Labels (y_class):**
-- 0: Next turning point is HH (High-High)
-- 1: Next turning point is LL (Low-Low)
-- -1: No next turning point found
+#### Classification Labels (HH/LL/HL/LH)
+- Total raw labels: [To be filled]
+- Valid labels (not -1): [To be filled] ([To be filled]%)
+- Invalid labels: [To be filled]
 
-**Regression Labels (y_reg):**
-- Distance to next turning point in bars
-- -1: No next turning point found
+**Class Distribution:**
+- Class 0 (HH): [To be filled] ([To be filled]%)
+- Class 1 (LL): [To be filled] ([To be filled]%)
+- Class 2 (HL): [To be filled] ([To be filled]%)
+- Class 3 (LH): [To be filled] ([To be filled]%)
+- Class Balance Ratio: [To be filled]
 
-**Sequence Creation:**
-- Sliding window of 30 consecutive bars
-- Label comes from end of sequence
-- Overlapping sequences for maximum utilization
-- Shape: (num_sequences - 30, 30, 13)
+#### Regression Labels (Distance to Next Point)
+- Total raw labels: [To be filled]
+- Valid labels: [To be filled] ([To be filled]%)
+- Invalid labels: [To be filled]
+- Mean distance: [To be filled] bars
+- Std distance: [To be filled] bars
+- Min distance: [To be filled] bars
+- Max distance: [To be filled] bars
 
-**Class Balance Handling:**
-- Analyzed HH vs LL distribution
-- Identified imbalance patterns
-- Recommended weighted loss or SMOTE augmentation
+#### Sequence Creation
+- Sequence length: 30 bars
+- Total sequences: [To be filled]
+- X_class shape: [To be filled]
+- y_class shape: [To be filled]
 
-## Output Files
+#### Output Files
+- BTC_1h_X_sequences.npy: [To be filled] bytes
+- BTC_1h_y_class.npy: [To be filled] bytes
+- BTC_1h_y_reg.npy: [To be filled] bytes
+- BTC_1h_scaler.pkl: [To be filled] bytes
+- BTC_1h_zigzag_points.json: [To be filled] points
+- BTC_1h_statistics.json: Complete statistics
 
-### Generated Files (per timeframe)
+## Notes
 
-1. **X_sequences.npy**
-   - Shape: (N, 30, 13)
-   - Type: float32
-   - Contains: 30-bar sequences of normalized features
+- All four zigzag types (HH, LL, HL, LH) are used for classification
+- HH and LL represent trend continuation
+- HL and LH represent potential trend reversals
+- Unknown labels (-1) occur when no future turning point exists in the data
+- The model will learn to predict both trend direction and reversal signals simultaneously
+- StandardScaler normalization improves LSTM training stability
+- Sequence length of 30 bars provides adequate temporal context
 
-2. **y_class.npy**
-   - Shape: (N,)
-   - Type: int32
-   - Contains: Classification labels (0=HH, 1=LL, -1=unknown)
+## Execution Status
 
-3. **y_reg.npy**
-   - Shape: (N,)
-   - Type: int32
-   - Contains: Bars to next turning point
-
-4. **scaler.pkl**
-   - Type: Pickle serialized StandardScaler
-   - Usage: For inverse transformation of predictions
-
-5. **zigzag_points.json**
-   - Format: JSON array
-   - Contains: List of turning points with index, type, price
-   - Example: `{"index": 123, "type": "HH", "price": 45000.50}`
-
-6. **statistics.json**
-   - Contains complete processing statistics
-   - Includes feature stats, label distribution, shape info
-
-## Execution Results Template
-
-### BTC_15m Processing
-
-**Data Summary:**
-- Total samples: [TO BE FILLED]
-- Sequence length: 30
-- Total sequences: [TO BE FILLED]
-- Number of features: 13
-
-**Zigzag Statistics:**
-- Total turning points: [TO BE FILLED]
-- HH count: [TO BE FILLED]
-- LL count: [TO BE FILLED]
-- HH percentage: [TO BE FILLED]%
-- LL percentage: [TO BE FILLED]%
-
-**Classification Label Distribution:**
-- Class 0 (HH): [TO BE FILLED]
-- Class 1 (LL): [TO BE FILLED]
-- Unknown (-1): [TO BE FILLED]
-- Balance ratio: [TO BE FILLED]
-
-**Regression Label Distribution:**
-- Valid points: [TO BE FILLED]
-- Mean distance: [TO BE FILLED] bars
-- Std distance: [TO BE FILLED] bars
-- Min distance: [TO BE FILLED] bars
-- Max distance: [TO BE FILLED] bars
-
-**Feature Statistics (Sample):**
-- RSI_14: Mean=[TO BE FILLED], Std=[TO BE FILLED], Range=[0-100]
-- MACD: Mean=[TO BE FILLED], Std=[TO BE FILLED]
-- ATR_14: Mean=[TO BE FILLED], Std=[TO BE FILLED]
-- Returns: Mean=[TO BE FILLED], Std=[TO BE FILLED]
-- Volume Ratio: Mean=[TO BE FILLED], Std=[TO BE FILLED]
-
-**Data Shapes:**
-- X_sequences: (N, 30, 13)
-- y_class: (N,)
-- y_reg: (N,)
-
-### BTC_1h Processing
-
-[Same structure as BTC_15m]
-
-## Performance Metrics
-
-### Execution Time
-- Data loading: [TO BE FILLED] seconds
-- Zigzag calculation: [TO BE FILLED] seconds
-- Feature extraction: [TO BE FILLED] seconds
-- Normalization: [TO BE FILLED] seconds
-- Sequencing: [TO BE FILLED] seconds
-- File I/O: [TO BE FILLED] seconds
-- **Total: [TO BE FILLED] seconds**
-
-### Data Quality
-- Missing values handled: [TO BE FILLED]
-- Outliers detected: [TO BE FILLED]
-- NaN values after normalization: 0
-- Feature validation: PASSED
-
-## Key Insights
-
-### Class Distribution
-- HH turning points typically represent: [TO BE FILLED]%
-- LL turning points typically represent: [TO BE FILLED]%
-- Recommendation: Use weighted loss if imbalance > 80/20
-
-### Feature Correlations
-- High correlation pairs: [TO BE FILLED]
-- Low correlation pairs: [TO BE FILLED]
-- Recommendation: Consider feature selection if multicollinearity detected
-
-### Sequence Properties
-- Average bars between turning points: [TO BE FILLED]
-- Max bars without turning point: [TO BE FILLED]
-- Minimum bars without turning point: [TO BE FILLED]
-
-## Error Handling Summary
-
-No errors encountered during execution. All validation checks passed:
-- CSV file existence: PASSED
-- Column availability: PASSED
-- Data type consistency: PASSED
-- Feature calculation completeness: PASSED
-- Sequence integrity: PASSED
-- Label validity: PASSED
-
-## Next Steps (Step 3: LSTM Model Training)
-
-1. Load X_sequences.npy and y_class.npy for classification task
-2. Split data using temporal split (not random):
-   - Training: First 70%
-   - Validation: Next 15%
-   - Testing: Last 15%
-3. Build LSTM architecture with:
-   - Input shape: (30, 13)
-   - Dropout for regularization
-   - Batch normalization
-   - Bidirectional LSTM considered
-4. Train with:
-   - Loss: Categorical crossentropy (classification)
-   - Optimizer: Adam
-   - Metrics: Accuracy, F1-score
-   - Early stopping with patience
-5. Evaluate on test set
-6. Save model checkpoint
-
-## Conclusion
-
-The feature engineering pipeline successfully processed [TO BE FILLED] samples and generated training data suitable for LSTM model training. All outputs are saved in the step2_output directory and are ready for the next stage.
-
----
-
-**Execution Date:** [TO BE FILLED]
-**Executed By:** Feature Engineering Pipeline
-**Status:** COMPLETE/FAILED
+- Start time: [To be filled]
+- End time: [To be filled]
+- Total duration: [To be filled]
+- Status: [To be filled - SUCCESS/FAILED]
