@@ -2,6 +2,7 @@
 Data Loader Module: Download and load OHLCV data from HuggingFace Hub.
 This module handles the downloading of cryptocurrency OHLCV data from the
 v2-crypto-ohlcv-data dataset on HuggingFace, with retry logic and authentication.
+Supports chunked reading for optimal memory usage with large Parquet files.
 """
 
 import os
@@ -29,6 +30,12 @@ class DataLoader:
     """
     Handles downloading and loading OHLCV data from HuggingFace Hub.
     
+    Features:
+    - Retry logic with exponential backoff
+    - HF_TOKEN authentication support
+    - Chunked Parquet reading for large files
+    - Memory-efficient processing
+    
     Attributes:
         dataset_id (str): HuggingFace dataset identifier
         hf_token (str): HuggingFace API token for authentication
@@ -47,6 +54,8 @@ class DataLoader:
                 - symbols: List of symbols to download
                 - timeframes: List of timeframes
                 - cache_dir: Cache directory path
+                - max_retries: Max download attempts
+                - timeout: Request timeout in seconds
         """
         self.dataset_id = config.get('dataset_id', 'zongowo111/v2-crypto-ohlcv-data')
         self.hf_token = os.getenv('HF_TOKEN', None)
@@ -55,9 +64,11 @@ class DataLoader:
         self.timeframes = config.get('timeframes', ['15m', '1h'])
         self.max_retries = config.get('max_retries', 3)
         self.timeout = config.get('timeout', 300)
+        self.chunk_size = config.get('chunk_size', 50000)
         
         Path(self.cache_dir).mkdir(parents=True, exist_ok=True)
         logger.info(f"DataLoader initialized - Dataset: {self.dataset_id}")
+        logger.info(f"Cache directory: {self.cache_dir}")
     
     @retry(
         stop=stop_after_attempt(3),
@@ -67,9 +78,10 @@ class DataLoader:
     def _download_parquet(self, file_path: str) -> str:
         """
         Download a parquet file from HuggingFace Hub with retry logic.
+        Uses exponential backoff for transient failures.
         
         Args:
-            file_path (str): Path within the dataset (e.g., 'klines/BTCUSDT/BTC_15m.parquet')
+            file_path (str): Path within dataset (e.g., 'klines/BTCUSDT/BTC_15m.parquet')
             
         Returns:
             str: Local path to the downloaded file
@@ -106,7 +118,8 @@ class DataLoader:
         Returns:
             Optional[str]: Path to downloaded file, or None if failed
         """
-        file_path = f'klines/{symbol}/{symbol.split("USDT")[0]}_{timeframe}.parquet'
+        base_symbol = symbol.split('USDT')[0] if 'USDT' in symbol else symbol
+        file_path = f'klines/{symbol}/{base_symbol}_{timeframe}.parquet'
         
         try:
             start_time = time.time()
@@ -114,41 +127,99 @@ class DataLoader:
             elapsed = time.time() - start_time
             
             file_size_mb = os.path.getsize(local_path) / (1024 * 1024)
-            logger.info(f"Downloaded {symbol} {timeframe}: {file_size_mb:.2f}MB in {elapsed:.1f}s")
+            logger.info(
+                f"Downloaded {symbol} {timeframe}: "
+                f"{file_size_mb:.2f}MB in {elapsed:.1f}s "
+                f"({file_size_mb/elapsed:.1f}MB/s)"
+            )
             
             return local_path
         except Exception as e:
             logger.error(f"Failed to download {symbol} {timeframe}: {str(e)}")
             return None
     
-    def load_parquet(self, file_path: str) -> Optional[pd.DataFrame]:
+    def load_parquet(self, file_path: str, use_chunked: bool = False) -> Optional[pd.DataFrame]:
         """
         Load a parquet file into a pandas DataFrame.
+        Supports chunked reading for memory efficiency with large files.
         
         Args:
             file_path (str): Path to the parquet file
+            use_chunked (bool): Use chunked reading for large files
             
         Returns:
             Optional[pd.DataFrame]: DataFrame or None if failed
         """
         try:
-            df = pd.read_parquet(file_path)
-            logger.info(f"Loaded parquet file: {len(df)} rows, {len(df.columns)} columns")
-            return df
+            file_size_mb = os.path.getsize(file_path) / (1024 * 1024)
+            logger.info(f"Loading parquet file: {file_size_mb:.2f}MB")
+            
+            if use_chunked and file_size_mb > 100:
+                logger.info("Using chunked reading for large file")
+                return self._load_parquet_chunked(file_path)
+            else:
+                df = pd.read_parquet(
+                    file_path,
+                    engine='pyarrow',
+                    use_nullable_dtypes=False,
+                    memory_map=True
+                )
+                logger.info(
+                    f"Loaded parquet file: "
+                    f"{len(df)} rows, {len(df.columns)} columns"
+                )
+                return df
         except Exception as e:
             logger.error(f"Error loading parquet file {file_path}: {str(e)}")
+            return None
+    
+    def _load_parquet_chunked(self, file_path: str) -> Optional[pd.DataFrame]:
+        """
+        Load a large parquet file in chunks for memory efficiency.
+        
+        Args:
+            file_path (str): Path to the parquet file
+            
+        Returns:
+            Optional[pd.DataFrame]: Concatenated DataFrame or None if failed
+        """
+        try:
+            parquet_file = pq.ParquetFile(file_path)
+            logger.info(
+                f"Parquet file has {parquet_file.num_row_groups} row groups"
+            )
+            
+            chunks = []
+            for i in range(parquet_file.num_row_groups):
+                table = parquet_file.read_row_group(i)
+                df_chunk = table.to_pandas()
+                chunks.append(df_chunk)
+                logger.info(
+                    f"Loaded row group {i+1}/{parquet_file.num_row_groups} "
+                    f"({len(df_chunk)} rows)"
+                )
+            
+            df = pd.concat(chunks, ignore_index=True)
+            logger.info(
+                f"Loaded complete file: "
+                f"{len(df)} rows, {len(df.columns)} columns"
+            )
+            return df
+        except Exception as e:
+            logger.error(f"Error in chunked loading: {str(e)}")
             return None
     
     def load_ohlcv_data(self, symbol: str, timeframe: str) -> Optional[pd.DataFrame]:
         """
         Download and load OHLCV data for a specific symbol and timeframe.
+        Automatically standardizes columns and ensures data quality.
         
         Args:
             symbol (str): Cryptocurrency symbol
             timeframe (str): Timeframe (15m or 1h)
             
         Returns:
-            Optional[pd.DataFrame]: Loaded data or None if failed
+            Optional[pd.DataFrame]: Loaded and standardized data or None if failed
         """
         file_path = self.download_from_hf(symbol, timeframe)
         if file_path is None:
@@ -162,7 +233,9 @@ class DataLoader:
             return None
         
         df = self._standardize_columns(df)
-        logger.info(f"Loaded OHLCV data for {symbol} {timeframe}: {len(df)} candles")
+        logger.info(
+            f"Loaded OHLCV data for {symbol} {timeframe}: {len(df)} candles"
+        )
         return df
     
     @staticmethod
@@ -187,14 +260,17 @@ class DataLoader:
             return False
         
         if not has_timestamp:
-            logger.warning("No timestamp column detected")
+            logger.warning(
+                "No timestamp column detected, will use index as timestamp"
+            )
         
         return True
     
     @staticmethod
     def _standardize_columns(df: pd.DataFrame) -> pd.DataFrame:
         """
-        Standardize column names and types.
+        Standardize column names and data types.
+        Converts price columns to float, timestamp to datetime.
         
         Args:
             df (pd.DataFrame): DataFrame to standardize
@@ -243,23 +319,31 @@ class DataLoader:
             file_path (str): Path to the file
             
         Returns:
-            dict: File information (size, rows, etc.)
+            dict: File information (size, rows, columns, etc.)
         """
         if not os.path.exists(file_path):
+            logger.warning(f"File not found: {file_path}")
             return {}
         
         file_size_mb = os.path.getsize(file_path) / (1024 * 1024)
-        df = self.load_parquet(file_path)
         
-        info = {
-            'file_path': file_path,
-            'size_mb': round(file_size_mb, 2),
-            'rows': len(df) if df is not None else 0,
-            'columns': list(df.columns) if df is not None else [],
-            'timestamp': datetime.now().isoformat()
-        }
-        
-        return info
+        try:
+            parquet_file = pq.ParquetFile(file_path)
+            df = parquet_file.read().to_pandas()
+            
+            info = {
+                'file_path': file_path,
+                'size_mb': round(file_size_mb, 2),
+                'rows': len(df),
+                'columns': list(df.columns),
+                'row_groups': parquet_file.num_row_groups,
+                'timestamp': datetime.now().isoformat()
+            }
+            
+            return info
+        except Exception as e:
+            logger.error(f"Error getting file info: {str(e)}")
+            return {'size_mb': file_size_mb, 'error': str(e)}
 
 
 def create_data_loader(config: dict) -> DataLoader:
