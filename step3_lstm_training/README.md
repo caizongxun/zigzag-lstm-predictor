@@ -1,40 +1,83 @@
-STEP 3: LSTM Model Training (Colab Environment)
+# Step 3: LSTM Training
 
-Responsibility: Build, train, and upload LSTM model. Must run in Google Colab and provide upload utilities.
+Multi-task LSTM model training for Zigzag prediction. Includes test model generation and upload tools for HuggingFace.
 
-Input:
-- Processed sequences from STEP 2
-- Feature scaler object
+## Status
 
-Output:
-- Trained LSTM model (model.h5)
-- Scaler pickle file (scaler.pkl)
-- Config JSON file
-- Colab upload script
-- Local upload script
+Framework structure prepared. Ready for Colab integration and model training.
 
-Model Architecture:
-- Multi-task LSTM: Classification + Regression heads
-- Classification: Predict zigzag type (HH vs LL)
-- Regression: Predict bars to next turning point
+## Components
 
-Training Output Files:
-1. test_model_{symbol}_{timeframe}.h5 - Test model
-2. test_scaler_{symbol}_{timeframe}.pkl - Test scaler
-3. test_config_{symbol}_{timeframe}.json - Test config
-4. colab_upload_{symbol}_{timeframe}.py - Colab upload utility
-5. local_upload_{symbol}_{timeframe}.py - Local upload utility
+- **model_builder.py**: LSTM architecture definition
+- **trainer.py**: Training logic and evaluation
+- **test_trainer.py**: Quick test model generation
+- **colab_upload.py**: Upload utility for Colab
+- **local_upload.py**: Upload utility for local environment
+- **colab_notebook_cells.py**: Colab-ready cell code
+- **main.py**: Pipeline orchestration
 
-Colab Cell Code Requirements:
-- No full repo clone
-- Direct file uploads
-- HF token integration
-- Progress tracking
+## Input
 
-Before implementing:
-1. Research LSTM multi-task learning architecture
-2. Research TensorFlow/Keras best practices for time series
-3. Research model serialization (h5, SavedModel formats)
-4. Research HF upload API and authentication
-5. Research Colab environment constraints and file handling
-6. Research progress bar and status reporting in Colab
+Step 2 Output:
+- `../step2_output/BTC_15m_X_sequences.npy`
+- `../step2_output/BTC_15m_y_class.npy`
+- `../step2_output/BTC_15m_y_reg.npy`
+- `../step2_output/BTC_15m_scaler.pkl`
+
+## Output
+
+Test Model:
+- `step3_output/test_model_BTC_15m.h5`
+- `step3_output/test_scaler_BTC_15m.pkl`
+- `step3_output/test_config_BTC_15m.json`
+
+Colab Tools:
+- `step3_output/colab_training_cells.py`
+- `step3_output/complete_training_script.py`
+
+HuggingFace Upload:
+- Model destination: `v2_model/BTC/15m/`
+- Files: `model.h5`, `scaler.pkl`, `config.json`
+
+## Model Architecture
+
+### Shared LSTM Layers
+- LSTM(64, return_sequences=True)
+- Dropout(0.2)
+- LSTM(32, return_sequences=False)
+- Dropout(0.2)
+
+### Classification Branch (HH vs LL)
+- Dense(16, relu)
+- Dense(1, sigmoid)
+- Loss: binary_crossentropy
+- Weight: 1.0
+
+### Regression Branch (Bars to Next)
+- Dense(16, relu)
+- Dense(8, relu)
+- Dense(1, relu)
+- Loss: mse
+- Weight: 0.5
+
+## Usage
+
+### Generate Test Model
+```bash
+python main.py
+```
+
+### Colab Training
+1. Copy cell code from `colab_training_cells.py`
+2. Run in Google Colab notebook
+3. Model uploads automatically to HuggingFace
+
+### Local Training and Upload
+```python
+from complete_training_script import train_full_model
+train_full_model('BTCUSDT', '15m')
+```
+
+## Next Steps
+
+Implementation begins after Step 2 completion.
