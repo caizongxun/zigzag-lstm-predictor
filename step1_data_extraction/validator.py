@@ -1,344 +1,429 @@
 """
-Validator Module: Perform comprehensive data quality checks.
-Validates timestamps, volume consistency, and overall data integrity.
+Validator Module: Comprehensive data quality checking and validation.
+This module validates timestamps, volume, prices, and detects anomalies using
+statistical methods.
 """
 
 import pandas as pd
 import numpy as np
 import logging
-from typing import Dict, List, Tuple
-from datetime import timedelta
+from typing import Dict, List
+from sklearn.ensemble import IsolationForest
+
 
 logger = logging.getLogger(__name__)
 
 
 class DataValidator:
     """
-    Validates OHLCV data quality and consistency.
+    Validates OHLCV cryptocurrency data quality.
     
-    Attributes:
-        df (pd.DataFrame): DataFrame to validate
-        validation_report (dict): Comprehensive validation report
+    Checks performed:
+    - Timestamp validation and continuity
+    - Volume validation
+    - Price range validation
+    - Missing value percentage
+    - Anomaly detection
+    - Data statistics
     """
     
-    def __init__(self, df: pd.DataFrame):
+    def __init__(self, config: dict = None):
         """
         Initialize DataValidator.
         
         Args:
-            df (pd.DataFrame): DataFrame to validate
+            config (dict): Configuration with keys:
+                - allow_missing_percent: Max missing % allowed (default: 5.0)
+                - allow_zero_volume_percent: Max zero volume % (default: 20.0)
         """
-        self.df = df.copy()
-        self.validation_report = {}
+        self.config = config or {}
+        self.allow_missing_percent = self.config.get('allow_missing_percent', 5.0)
+        self.allow_zero_volume_percent = self.config.get('allow_zero_volume_percent', 20.0)
     
-    def validate_timestamps(self) -> Dict:
+    def validate(self, df: pd.DataFrame) -> Dict:
         """
-        Validate timestamp consistency and continuity.
+        Execute complete validation.
         
-        Returns:
-            Dict: Validation results
-        """
-        results = {
-            'total_rows': len(self.df),
-            'timestamp_issues': []
-        }
-        
-        if 'timestamp' not in self.df.columns:
-            results['timestamp_issues'].append('No timestamp column')
-            return results
-        
-        timestamps = pd.to_datetime(self.df['timestamp'])
-        
-        if timestamps.isna().any():
-            na_count = timestamps.isna().sum()
-            results['timestamp_issues'].append(f'{na_count} NaT values found')
-        
-        if not (timestamps == timestamps.sort_values()).all():
-            results['timestamp_issues'].append('Timestamps not in ascending order')
-        
-        duplicates = timestamps.duplicated().sum()
-        if duplicates > 0:
-            results['timestamp_issues'].append(f'{duplicates} duplicate timestamps')
-        
-        time_diffs = timestamps.diff()
-        backward_diffs = (time_diffs < timedelta(0)).sum()
-        if backward_diffs > 0:
-            results['timestamp_issues'].append(f'{backward_diffs} backward time differences')
-        
-        zero_diffs = (time_diffs == timedelta(0)).sum()
-        if zero_diffs > 0:
-            results['timestamp_issues'].append(f'{zero_diffs} zero time differences')
-        
-        if len(time_diffs) > 1:
-            valid_diffs = time_diffs.dropna()
-            if len(valid_diffs) > 0:
-                expected_diff = valid_diffs.mode()
-                if len(expected_diff) > 0:
-                    expected_interval = expected_diff[0]
-                    unexpected_diffs = (valid_diffs != expected_interval).sum()
-                    if unexpected_diffs > 0:
-                        results['unexpected_intervals'] = unexpected_diffs
-                        results['expected_interval'] = str(expected_interval)
-        
-        results['is_valid'] = len(results['timestamp_issues']) == 0
-        
-        logger.info(f"Timestamp validation: {results['is_valid']}")
-        return results
-    
-    def validate_volume(self) -> Dict:
-        """
-        Validate volume data consistency and logic.
-        
-        Returns:
-            Dict: Validation results
-        """
-        results = {
-            'volume_issues': []
-        }
-        
-        if 'volume' not in self.df.columns:
-            results['volume_issues'].append('No volume column')
-            results['is_valid'] = False
-            return results
-        
-        volume = self.df['volume']
-        
-        if volume.isna().any():
-            na_count = volume.isna().sum()
-            results['volume_issues'].append(f'{na_count} NaN values')
-        
-        if (volume < 0).any():
-            negative_count = (volume < 0).sum()
-            results['volume_issues'].append(f'{negative_count} negative volumes')
-        
-        if (volume == 0).any():
-            zero_count = (volume == 0).sum()
-            zero_percentage = (zero_count / len(volume)) * 100
-            results['zero_volume_percentage'] = round(zero_percentage, 2)
-            if zero_percentage > 10:
-                results['volume_issues'].append(f'{zero_percentage:.2f}% zero volumes (high)')
-        
-        non_zero_volume = volume[volume > 0]
-        if len(non_zero_volume) > 0:
-            results['volume_stats'] = {
-                'mean': round(non_zero_volume.mean(), 2),
-                'median': round(non_zero_volume.median(), 2),
-                'std': round(non_zero_volume.std(), 2),
-                'min': round(non_zero_volume.min(), 2),
-                'max': round(non_zero_volume.max(), 2)
-            }
+        Args:
+            df (pd.DataFrame): Data to validate
             
-            outlier_threshold = results['volume_stats']['mean'] + 5 * results['volume_stats']['std']
-            outliers = (volume > outlier_threshold).sum()
-            if outliers > 0:
-                results['volume_outliers'] = outliers
-        
-        results['is_valid'] = len(results['volume_issues']) == 0
-        
-        logger.info(f"Volume validation: {results['is_valid']}")
-        return results
-    
-    def check_data_quality(self) -> Dict:
-        """
-        Perform comprehensive data quality check.
-        Returns a detailed quality report.
-        
         Returns:
             Dict: Comprehensive quality report
         """
         report = {
-            'timestamp': datetime.now().isoformat(),
-            'total_rows': len(self.df),
-            'total_columns': len(self.df.columns),
-            'columns': list(self.df.columns)
+            'total_rows': len(df),
+            'total_columns': len(df.columns),
+            'column_names': list(df.columns)
         }
         
-        report['missing_data'] = self._check_missing_values()
-        report['duplicate_data'] = self._check_duplicates()
-        report['ohlc_anomalies'] = self._check_ohlc_anomalies()
-        report['timestamp_validation'] = self.validate_timestamps()
-        report['volume_validation'] = self.validate_volume()
-        report['price_validation'] = self._check_price_consistency()
+        report['timestamp_validation'] = self._validate_timestamps(df)
+        report['volume_validation'] = self._validate_volume(df)
+        report['price_validation'] = self._validate_prices(df)
+        report['missing_values'] = self._check_missing_values(df)
+        report['duplicates'] = self._check_duplicates(df)
+        report['anomalies'] = self._detect_anomalies(df)
+        report['statistics'] = self._calculate_statistics(df)
         
         report['overall_quality_score'] = self._calculate_quality_score(report)
         
-        self.validation_report = report
+        logger.info(f"Validation complete. Quality Score: {report['overall_quality_score']}/100")
+        
         return report
     
-    def _check_missing_values(self) -> Dict:
+    def _validate_timestamps(self, df: pd.DataFrame) -> Dict:
         """
-        Check for missing values across all columns.
+        Validate timestamp continuity and format.
         
+        Args:
+            df (pd.DataFrame): Data to validate
+            
         Returns:
-            Dict: Missing value statistics
+            Dict: Timestamp validation report
         """
-        missing = {}
-        for col in self.df.columns:
-            na_count = self.df[col].isna().sum()
-            if na_count > 0:
-                percentage = (na_count / len(self.df)) * 100
-                missing[col] = {
-                    'count': na_count,
-                    'percentage': round(percentage, 2)
+        result = {
+            'has_timestamp_column': 'timestamp' in df.columns,
+            'timestamp_dtype': str(df['timestamp'].dtype) if 'timestamp' in df.columns else None,
+            'unique_timestamps': df['timestamp'].nunique() if 'timestamp' in df.columns else 0,
+            'is_sorted': True,
+            'gaps_detected': 0,
+            'status': 'pass'
+        }
+        
+        if not result['has_timestamp_column']:
+            result['status'] = 'fail'
+            return result
+        
+        if not pd.api.types.is_datetime64_any_dtype(df['timestamp']):
+            try:
+                df['timestamp'] = pd.to_datetime(df['timestamp'])
+            except Exception as e:
+                result['status'] = 'fail'
+                result['error'] = f"Cannot convert timestamp: {str(e)}"
+                return result
+        
+        if not df['timestamp'].is_monotonic_increasing:
+            result['is_sorted'] = False
+            result['status'] = 'warning'
+        
+        if len(df) > 1:
+            time_diffs = df['timestamp'].diff().dropna()
+            mode_diff = time_diffs.mode()
+            if len(mode_diff) > 0:
+                expected_diff = mode_diff[0]
+                gaps = (time_diffs != expected_diff).sum()
+                result['gaps_detected'] = int(gaps)
+                if gaps > 0:
+                    result['status'] = 'warning'
+                    logger.warning(f"Detected {gaps} timestamp gaps")
+        
+        return result
+    
+    def _validate_volume(self, df: pd.DataFrame) -> Dict:
+        """
+        Validate volume data.
+        
+        Args:
+            df (pd.DataFrame): Data to validate
+            
+        Returns:
+            Dict: Volume validation report
+        """
+        result = {
+            'has_volume': 'volume' in df.columns,
+            'volume_dtype': str(df['volume'].dtype) if 'volume' in df.columns else None,
+            'zero_volume_count': 0,
+            'zero_volume_percent': 0.0,
+            'negative_volume_count': 0,
+            'status': 'pass'
+        }
+        
+        if not result['has_volume']:
+            return result
+        
+        zero_count = (df['volume'] == 0).sum()
+        negative_count = (df['volume'] < 0).sum()
+        
+        result['zero_volume_count'] = int(zero_count)
+        result['zero_volume_percent'] = round(
+            (zero_count / len(df) * 100), 2
+        ) if len(df) > 0 else 0
+        result['negative_volume_count'] = int(negative_count)
+        
+        if result['zero_volume_percent'] > self.allow_zero_volume_percent:
+            result['status'] = 'warning'
+            logger.warning(
+                f"High zero volume percentage: {result['zero_volume_percent']}%"
+            )
+        
+        if negative_count > 0:
+            result['status'] = 'warning'
+            logger.warning(f"Detected {negative_count} negative volume entries")
+        
+        return result
+    
+    def _validate_prices(self, df: pd.DataFrame) -> Dict:
+        """
+        Validate price columns.
+        
+        Args:
+            df (pd.DataFrame): Data to validate
+            
+        Returns:
+            Dict: Price validation report
+        """
+        result = {
+            'price_columns_present': [],
+            'negative_prices': 0,
+            'zero_prices': 0,
+            'ohlc_violations': 0,
+            'status': 'pass'
+        }
+        
+        price_cols = ['open', 'high', 'low', 'close']
+        
+        for col in price_cols:
+            if col in df.columns:
+                result['price_columns_present'].append(col)
+                negative_count = (df[col] < 0).sum()
+                zero_count = (df[col] == 0).sum()
+                result['negative_prices'] += int(negative_count)
+                result['zero_prices'] += int(zero_count)
+        
+        if all(col in df.columns for col in ['open', 'high', 'low', 'close']):
+            ohlc_violations = (
+                (df['high'] < df['low']).sum() +
+                (df['high'] < df['open']).sum() +
+                (df['high'] < df['close']).sum() +
+                (df['low'] > df['open']).sum() +
+                (df['low'] > df['close']).sum()
+            )
+            result['ohlc_violations'] = int(ohlc_violations)
+            
+            if ohlc_violations > 0:
+                result['status'] = 'warning'
+                logger.warning(f"Detected {ohlc_violations} OHLC violations")
+        
+        if result['negative_prices'] > 0 or result['zero_prices'] > 0:
+            result['status'] = 'warning'
+        
+        return result
+    
+    def _check_missing_values(self, df: pd.DataFrame) -> Dict:
+        """
+        Check for missing values.
+        
+        Args:
+            df (pd.DataFrame): Data to validate
+            
+        Returns:
+            Dict: Missing values report
+        """
+        result = {
+            'total_missing': int(df.isnull().sum().sum()),
+            'missing_percent': round(
+                (df.isnull().sum().sum() / (len(df) * len(df.columns)) * 100), 2
+            ),
+            'columns_with_missing': {},
+            'status': 'pass'
+        }
+        
+        for col in df.columns:
+            missing = df[col].isnull().sum()
+            if missing > 0:
+                percent = round((missing / len(df) * 100), 2)
+                result['columns_with_missing'][col] = {
+                    'count': int(missing),
+                    'percent': percent
                 }
         
-        return {
-            'total_missing': sum(self.df.isna().sum()),
-            'columns_with_missing': missing,
-            'has_missing': len(missing) > 0
-        }
+        if result['missing_percent'] > self.allow_missing_percent:
+            result['status'] = 'warning'
+            logger.warning(f"High missing value percentage: {result['missing_percent']}%")
+        
+        return result
     
-    def _check_duplicates(self) -> Dict:
+    def _check_duplicates(self, df: pd.DataFrame) -> Dict:
         """
         Check for duplicate rows.
         
+        Args:
+            df (pd.DataFrame): Data to validate
+            
         Returns:
-            Dict: Duplicate statistics
+            Dict: Duplicates report
         """
-        total_duplicates = self.df.duplicated().sum()
-        
-        timestamp_duplicates = 0
-        if 'timestamp' in self.df.columns:
-            timestamp_duplicates = self.df['timestamp'].duplicated().sum()
-        
-        return {
-            'total_duplicates': total_duplicates,
-            'timestamp_duplicates': timestamp_duplicates,
-            'duplicate_percentage': round((total_duplicates / len(self.df)) * 100, 2) if len(self.df) > 0 else 0
+        result = {
+            'total_duplicates': int(df.duplicated().sum()),
+            'duplicate_percent': 0.0,
+            'status': 'pass'
         }
+        
+        result['duplicate_percent'] = round(
+            (result['total_duplicates'] / len(df) * 100), 2
+        ) if len(df) > 0 else 0
+        
+        if result['total_duplicates'] > 0:
+            result['status'] = 'warning'
+            logger.warning(
+                f"Detected {result['total_duplicates']} duplicate rows "
+                f"({result['duplicate_percent']}%)"
+            )
+        
+        return result
     
-    def _check_ohlc_anomalies(self) -> Dict:
+    def _detect_anomalies(self, df: pd.DataFrame) -> Dict:
         """
-        Check for OHLC relationship anomalies.
+        Detect anomalies using Isolation Forest.
         
+        Args:
+            df (pd.DataFrame): Data to validate
+            
         Returns:
-            Dict: OHLC anomaly statistics
+            Dict: Anomaly detection report
         """
-        anomalies = []
-        
-        required_cols = ['open', 'high', 'low', 'close']
-        if not all(col in self.df.columns for col in required_cols):
-            return {'error': 'Missing OHLC columns'}
-        
-        o, h, l, c = self.df['open'], self.df['high'], self.df['low'], self.df['close']
-        
-        high_below_oc = ((h < o) | (h < c)).sum()
-        if high_below_oc > 0:
-            anomalies.append(f'High below open/close: {high_below_oc} cases')
-        
-        low_above_oc = ((l > o) | (l > c)).sum()
-        if low_above_oc > 0:
-            anomalies.append(f'Low above open/close: {low_above_oc} cases')
-        
-        close_outside_hl = ((c < l) | (c > h)).sum()
-        if close_outside_hl > 0:
-            anomalies.append(f'Close outside H-L range: {close_outside_hl} cases')
-        
-        return {
-            'total_anomalies': len(anomalies),
-            'anomaly_details': anomalies,
-            'has_anomalies': len(anomalies) > 0
+        result = {
+            'method': 'isolation_forest',
+            'anomalies_detected': 0,
+            'anomaly_percent': 0.0,
+            'status': 'pass'
         }
+        
+        numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+        
+        if len(numeric_cols) < 2:
+            return result
+        
+        try:
+            df_numeric = df[numeric_cols].dropna()
+            
+            if len(df_numeric) > 10:
+                iso_forest = IsolationForest(
+                    contamination=0.05,
+                    random_state=42,
+                    n_estimators=100
+                )
+                predictions = iso_forest.fit_predict(df_numeric)
+                anomalies = (predictions == -1).sum()
+                
+                result['anomalies_detected'] = int(anomalies)
+                result['anomaly_percent'] = round(
+                    (anomalies / len(df_numeric) * 100), 2
+                )
+                
+                if result['anomaly_percent'] > 10:
+                    result['status'] = 'warning'
+                    logger.warning(
+                        f"High anomaly rate: {result['anomaly_percent']}%"
+                    )
+        
+        except Exception as e:
+            result['error'] = str(e)
+            result['status'] = 'error'
+            logger.error(f"Anomaly detection failed: {str(e)}")
+        
+        return result
     
-    def _check_price_consistency(self) -> Dict:
+    def _calculate_statistics(self, df: pd.DataFrame) -> Dict:
         """
-        Check for price data consistency.
+        Calculate basic statistics.
         
+        Args:
+            df (pd.DataFrame): Data to validate
+            
         Returns:
-            Dict: Price consistency statistics
+            Dict: Statistics report
         """
-        required_cols = ['open', 'high', 'low', 'close']
-        if not all(col in self.df.columns for col in required_cols):
-            return {'error': 'Missing price columns'}
+        result = {}
         
-        prices = self.df[required_cols]
+        numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
         
-        has_negative = (prices < 0).any().any()
-        has_zero = (prices == 0).any().any()
+        for col in numeric_cols:
+            result[col] = {
+                'mean': round(df[col].mean(), 8),
+                'std': round(df[col].std(), 8),
+                'min': float(df[col].min()),
+                'max': float(df[col].max()),
+                'median': round(df[col].median(), 8),
+                'q25': round(df[col].quantile(0.25), 8),
+                'q75': round(df[col].quantile(0.75), 8)
+            }
         
-        returns = self.df['close'].pct_change()
-        extreme_returns = (returns.abs() > 0.5).sum()
-        
-        return {
-            'has_negative_prices': has_negative,
-            'has_zero_prices': has_zero,
-            'extreme_returns_count': extreme_returns if extreme_returns > 0 else 0,
-            'extreme_return_percentage': round((extreme_returns / len(returns)) * 100, 2) if len(returns) > 0 else 0,
-            'is_valid': not (has_negative or (extreme_returns > len(returns) * 0.1))
-        }
+        return result
     
     def _calculate_quality_score(self, report: Dict) -> float:
         """
         Calculate overall data quality score (0-100).
         
         Args:
-            report (Dict): Quality report
+            report (Dict): Validation report
             
         Returns:
             float: Quality score
         """
         score = 100.0
         
-        if report['missing_data']['has_missing']:
-            score -= report['missing_data']['total_missing'] * 0.1
-        
-        score -= report['duplicate_data']['duplicate_percentage'] * 0.5
-        
-        if report['ohlc_anomalies']['has_anomalies']:
-            score -= report['ohlc_anomalies']['total_anomalies'] * 0.5
-        
-        if not report['timestamp_validation']['is_valid']:
-            score -= 20
-        
-        if not report['volume_validation']['is_valid']:
-            score -= 10
-        
-        if not report['price_validation']['is_valid']:
+        if report['missing_values']['status'] != 'pass':
             score -= 15
         
-        return max(0, min(100, round(score, 2)))
+        if report['timestamp_validation']['status'] != 'pass':
+            score -= 15
+        
+        if report['volume_validation']['status'] != 'pass':
+            score -= 10
+        
+        if report['price_validation']['status'] != 'pass':
+            score -= 15
+        
+        if report['duplicates']['status'] != 'pass':
+            score -= 10
+        
+        if report['anomalies']['status'] == 'warning':
+            anomaly_percent = report['anomalies']['anomaly_percent']
+            score -= min(15, anomaly_percent)
+        elif report['anomalies']['status'] == 'error':
+            score -= 10
+        
+        return max(0, min(100, score))
 
 
 def validate_timestamps(df: pd.DataFrame) -> Dict:
     """
-    Convenience function to validate timestamps.
+    Validate timestamp continuity.
     
     Args:
-        df (pd.DataFrame): DataFrame to validate
+        df (pd.DataFrame): Data to validate
         
     Returns:
-        Dict: Validation results
+        Dict: Timestamp validation result
     """
-    validator = DataValidator(df)
-    return validator.validate_timestamps()
+    validator = DataValidator()
+    return validator._validate_timestamps(df)
 
 
 def validate_volume(df: pd.DataFrame) -> Dict:
     """
-    Convenience function to validate volume.
+    Validate volume logic.
     
     Args:
-        df (pd.DataFrame): DataFrame to validate
+        df (pd.DataFrame): Data to validate
         
     Returns:
-        Dict: Validation results
+        Dict: Volume validation result
     """
-    validator = DataValidator(df)
-    return validator.validate_volume()
+    validator = DataValidator()
+    return validator._validate_volume(df)
 
 
-def check_data_quality(df: pd.DataFrame) -> Dict:
+def check_data_quality(df: pd.DataFrame, config: dict = None) -> Dict:
     """
-    Convenience function to check overall data quality.
+    Check overall data quality.
     
     Args:
-        df (pd.DataFrame): DataFrame to validate
+        df (pd.DataFrame): Data to validate
+        config (dict): Validation configuration
         
     Returns:
-        Dict: Comprehensive quality report
+        Dict: Quality report with overall score
     """
-    validator = DataValidator(df)
-    return validator.check_data_quality()
-
-
-from datetime import datetime
+    validator = DataValidator(config)
+    return validator.validate(df)
