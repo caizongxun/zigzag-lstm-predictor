@@ -1,29 +1,38 @@
-STEP2_CONFIG = {
-    'zigzag_threshold': 5,
-    'lookback_period': 20,
-    'rsi_period': 14,
-    'macd_fast': 12,
-    'macd_slow': 26,
-    'macd_signal': 9,
-    'atr_period': 14,
-    'output_dir': './step2_output',
-    'sequence_length': 30,
-    'test_symbol': 'BTCUSDT',
-    'test_timeframes': ['15m', '1h'],
+"""
+Configuration for Step 2 Feature Engineering
+"""
+
+ZIGZAG_CONFIG = {
+    'threshold_percent': 5.0,
+    'lookback': 20
 }
 
 TECHNICAL_INDICATORS = [
-    'rsi',
+    'rsi_14',
     'macd',
     'macd_signal',
     'macd_histogram',
-    'atr',
+    'atr_14',
     'high_low_ratio',
     'close_range',
-    'returns',
-    'returns_volatility',
-    'highest',
-    'lowest',
+    'highest_20',
+    'lowest_20',
+    'volume_sma_20',
     'volume_ratio',
-    'price_acceleration'
+    'returns',
+    'returns_volatility'
 ]
+
+SEQUENCE_CONFIG = {
+    'sequence_length': 30,
+    'train_split': 0.7,
+    'val_split': 0.15,
+    'test_split': 0.15,
+    'normalize': True
+}
+
+OUTPUT_CONFIG = {
+    'output_dir': '../step2_output',
+    'save_format': 'npy',
+    'compress': False
+}
