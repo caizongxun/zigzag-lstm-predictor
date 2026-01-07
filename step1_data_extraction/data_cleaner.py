@@ -1,234 +1,238 @@
 """
 Data Cleaner Module: Clean and validate OHLCV data.
-Handles duplicate removal, missing value imputation, OHLC relationship validation,
-and timestamp consistency checks.
+This module handles duplicate removal, missing value handling, OHLC relationship
+validation, and timestamp continuity checks.
 """
 
 import pandas as pd
 import numpy as np
 import logging
-from typing import Tuple, Dict, List
-from datetime import timedelta
+from typing import Tuple, Dict
+
 
 logger = logging.getLogger(__name__)
 
 
-class DataCleaner:
+class OHLCVCleaner:
     """
-    Handles cleaning and validation of OHLCV data.
+    Cleans OHLCV (Open-High-Low-Close-Volume) cryptocurrency data.
     
-    Attributes:
-        df (pd.DataFrame): Input DataFrame
-        config (dict): Configuration parameters
-        cleaning_report (dict): Report of cleaning operations
+    Responsibilities:
+    - Remove duplicate rows
+    - Handle missing values (forward fill or interpolation)
+    - Validate OHLC relationships
+    - Check timestamp continuity
     """
     
     def __init__(self, config: dict = None):
         """
-        Initialize DataCleaner.
+        Initialize OHLCVCleaner.
         
         Args:
-            config (dict): Configuration dictionary with cleaning parameters
+            config (dict): Configuration with keys:
+                - fill_limit: Max consecutive NaN to fill (default: 5)
+                - remove_duplicates: Whether to remove duplicates (default: True)
         """
         self.config = config or {}
+        self.fill_limit = self.config.get('fill_limit', 5)
+        self.remove_duplicates = self.config.get('remove_duplicates', True)
         self.cleaning_report = {}
-        self.df = None
     
-    def clean_ohlcv_data(self, df: pd.DataFrame) -> Tuple[pd.DataFrame, Dict]:
+    def clean(self, df: pd.DataFrame) -> Tuple[pd.DataFrame, Dict]:
         """
-        Perform comprehensive OHLCV data cleaning.
+        Execute complete cleaning pipeline.
         
         Args:
             df (pd.DataFrame): Raw OHLCV data
             
         Returns:
-            Tuple[pd.DataFrame, Dict]: Cleaned DataFrame and cleaning report
+            Tuple[pd.DataFrame, Dict]: Cleaned data and detailed report
         """
-        self.df = df.copy()
+        df = df.copy()
+        initial_rows = len(df)
         self.cleaning_report = {
-            'initial_rows': len(self.df),
-            'operations': []
+            'initial_rows': initial_rows,
+            'steps': {}
         }
         
-        logger.info(f"Starting data cleaning: {len(self.df)} rows")
+        df = self._remove_duplicates(df)
+        df = self._fix_missing_values(df)
+        df = self._fix_ohlc_relationships(df)
+        df = self._ensure_timestamp_order(df)
+        df = self._remove_invalid_rows(df)
         
-        self.df = self._remove_duplicates()
-        self.df = self._fix_missing_values()
-        self.df = self._validate_ohlc_relationships()
-        self.df = self._validate_timestamp_consistency()
-        self.df = self._sort_by_timestamp()
+        final_rows = len(df)
+        self.cleaning_report['final_rows'] = final_rows
+        self.cleaning_report['rows_removed'] = initial_rows - final_rows
+        self.cleaning_report['removal_percentage'] = round(
+            (initial_rows - final_rows) / initial_rows * 100, 2
+        ) if initial_rows > 0 else 0
         
-        self.cleaning_report['final_rows'] = len(self.df)
-        self.cleaning_report['rows_removed'] = self.cleaning_report['initial_rows'] - self.cleaning_report['final_rows']
+        logger.info(f"Cleaning complete: {initial_rows} -> {final_rows} rows")
+        logger.info(f"Report: {self.cleaning_report}")
         
-        logger.info(f"Cleaning completed: {self.cleaning_report['final_rows']} rows remaining")
-        
-        return self.df, self.cleaning_report
+        return df, self.cleaning_report
     
-    def _remove_duplicates(self) -> pd.DataFrame:
+    def _remove_duplicates(self, df: pd.DataFrame) -> pd.DataFrame:
         """
         Remove duplicate rows based on timestamp.
         
+        Args:
+            df (pd.DataFrame): Input DataFrame
+            
         Returns:
-            pd.DataFrame: DataFrame with duplicates removed
+            pd.DataFrame: DataFrame without duplicates
         """
-        initial_count = len(self.df)
+        if not self.remove_duplicates:
+            self.cleaning_report['steps']['duplicates_removed'] = 0
+            return df
         
-        self.df = self.df.drop_duplicates(subset=['timestamp'], keep='first')
-        self.df = self.df.drop_duplicates(subset=['open', 'high', 'low', 'close', 'volume'], keep='first')
+        initial_rows = len(df)
         
-        duplicates_removed = initial_count - len(self.df)
+        if 'timestamp' in df.columns:
+            df = df.drop_duplicates(subset=['timestamp'], keep='last')
+        else:
+            df = df.drop_duplicates(keep='last')
+        
+        duplicates_removed = initial_rows - len(df)
+        self.cleaning_report['steps']['duplicates_removed'] = duplicates_removed
         
         if duplicates_removed > 0:
             logger.info(f"Removed {duplicates_removed} duplicate rows")
-            self.cleaning_report['operations'].append({
-                'step': 'remove_duplicates',
-                'rows_removed': duplicates_removed
-            })
         
-        return self.df
+        return df
     
-    def _fix_missing_values(self) -> pd.DataFrame:
+    def _fix_missing_values(self, df: pd.DataFrame) -> pd.DataFrame:
         """
-        Handle missing values in OHLCV data.
-        Uses forward fill followed by interpolation for remaining NaNs.
+        Handle missing values in OHLCV columns.
+        Strategy: forward fill with limit, then interpolation for remaining.
         
+        Args:
+            df (pd.DataFrame): Input DataFrame
+            
         Returns:
-            pd.DataFrame: DataFrame with missing values imputed
+            pd.DataFrame: DataFrame with missing values handled
         """
+        df = df.copy()
         ohlcv_cols = ['open', 'high', 'low', 'close', 'volume']
+        missing_cols = [col for col in ohlcv_cols if col in df.columns]
         
-        missing_before = self.df[ohlcv_cols].isna().sum().sum()
+        initial_missing = df[missing_cols].isnull().sum().sum()
         
-        for col in ohlcv_cols:
-            if col in self.df.columns:
-                self.df[col] = self.df[col].fillna(method='ffill', limit=5)
-                self.df[col] = self.df[col].interpolate(method='linear', limit_direction='both')
-                self.df[col] = self.df[col].fillna(self.df[col].mean())
+        for col in missing_cols:
+            missing_in_col = df[col].isnull().sum()
+            if missing_in_col > 0:
+                df[col] = df[col].fillna(method='ffill', limit=self.fill_limit)
+                df[col] = df[col].interpolate(method='linear', limit_direction='both')
+                remaining_missing = df[col].isnull().sum()
+                if remaining_missing > 0:
+                    df[col] = df[col].fillna(df[col].mean())
         
-        missing_after = self.df[ohlcv_cols].isna().sum().sum()
+        final_missing = df[missing_cols].isnull().sum().sum()
         
-        if missing_before > 0:
-            logger.info(f"Fixed missing values: {missing_before} -> {missing_after}")
-            self.cleaning_report['operations'].append({
-                'step': 'fix_missing_values',
-                'missing_before': missing_before,
-                'missing_after': missing_after
-            })
+        self.cleaning_report['steps']['missing_values_fixed'] = {
+            'initial_missing': initial_missing,
+            'final_missing': final_missing
+        }
         
-        return self.df
+        if initial_missing > 0:
+            logger.info(f"Fixed {initial_missing} missing values ({final_missing} remain)")
+        
+        return df
     
-    def _validate_ohlc_relationships(self) -> pd.DataFrame:
+    def _fix_ohlc_relationships(self, df: pd.DataFrame) -> pd.DataFrame:
         """
-        Validate OHLC relationships and fix anomalies.
-        - high should be >= max(open, close)
-        - low should be <= min(open, close)
-        - open and close should be between high and low
+        Validate and fix OHLC relationships:
+        - high >= open, close, low
+        - low <= open, close, high
+        - high >= low
         
+        Args:
+            df (pd.DataFrame): Input DataFrame
+            
         Returns:
-            pd.DataFrame: DataFrame with invalid OHLC relationships fixed
+            pd.DataFrame: DataFrame with corrected OHLC relationships
         """
-        anomalies_fixed = 0
+        df = df.copy()
+        invalid_rows = []
         
-        for idx in self.df.index:
-            o, h, l, c = self.df.loc[idx, ['open', 'high', 'low', 'close']]
+        if all(col in df.columns for col in ['open', 'high', 'low', 'close']):
             
-            if pd.isna([o, h, l, c]).any():
-                continue
+            invalid_high = df['high'] < df[['open', 'close', 'low']].max(axis=1)
+            invalid_low = df['low'] > df[['open', 'close', 'high']].min(axis=1)
+            invalid_hl = df['high'] < df['low']
             
-            original = (o, h, l, c)
+            invalid_mask = invalid_high | invalid_low | invalid_hl
+            invalid_count = invalid_mask.sum()
             
-            if h < max(o, c):
-                self.df.loc[idx, 'high'] = max(o, c)
-                anomalies_fixed += 1
-            
-            if l > min(o, c):
-                self.df.loc[idx, 'low'] = min(o, c)
-                anomalies_fixed += 1
-            
-            if o < self.df.loc[idx, 'low']:
-                self.df.loc[idx, 'open'] = self.df.loc[idx, 'low']
-                anomalies_fixed += 1
-            
-            if o > self.df.loc[idx, 'high']:
-                self.df.loc[idx, 'open'] = self.df.loc[idx, 'high']
-                anomalies_fixed += 1
-            
-            if c < self.df.loc[idx, 'low']:
-                self.df.loc[idx, 'close'] = self.df.loc[idx, 'low']
-                anomalies_fixed += 1
-            
-            if c > self.df.loc[idx, 'high']:
-                self.df.loc[idx, 'close'] = self.df.loc[idx, 'high']
-                anomalies_fixed += 1
+            if invalid_count > 0:
+                invalid_rows = df[invalid_mask].index.tolist()
+                logger.warning(f"Found {invalid_count} rows with invalid OHLC relationships")
+                
+                for idx in invalid_rows:
+                    o, h, l, c = df.loc[idx, ['open', 'high', 'low', 'close']]
+                    new_h = max(o, h, l, c)
+                    new_l = min(o, h, l, c)
+                    df.loc[idx, 'high'] = new_h
+                    df.loc[idx, 'low'] = new_l
         
-        if anomalies_fixed > 0:
-            logger.info(f"Fixed {anomalies_fixed} OHLC relationship anomalies")
-            self.cleaning_report['operations'].append({
-                'step': 'validate_ohlc_relationships',
-                'anomalies_fixed': anomalies_fixed
-            })
+        self.cleaning_report['steps']['ohlc_fixed'] = len(invalid_rows)
         
-        return self.df
+        return df
     
-    def _validate_timestamp_consistency(self) -> pd.DataFrame:
+    def _ensure_timestamp_order(self, df: pd.DataFrame) -> pd.DataFrame:
         """
-        Validate and fix timestamp consistency issues.
-        - Ensures timestamps are sorted
-        - Removes duplicates
-        - Checks for backward timestamps
+        Ensure timestamps are in chronological order.
         
+        Args:
+            df (pd.DataFrame): Input DataFrame
+            
         Returns:
-            pd.DataFrame: DataFrame with consistent timestamps
+            pd.DataFrame: DataFrame sorted by timestamp
         """
-        issues_found = 0
+        if 'timestamp' in df.columns:
+            df = df.sort_values('timestamp').reset_index(drop=True)
+            self.cleaning_report['steps']['timestamp_ordered'] = True
         
-        self.df = self.df.sort_values('timestamp')
-        
-        timestamp_diffs = self.df['timestamp'].diff()
-        backward_entries = (timestamp_diffs < timedelta(0)).sum()
-        
-        if backward_entries > 0:
-            logger.warning(f"Found {backward_entries} backward timestamps")
-            self.df = self.df.sort_values('timestamp').reset_index(drop=True)
-            issues_found += backward_entries
-        
-        duplicate_timestamps = self.df['timestamp'].duplicated().sum()
-        
-        if duplicate_timestamps > 0:
-            logger.warning(f"Found {duplicate_timestamps} duplicate timestamps")
-            self.df = self.df.drop_duplicates(subset=['timestamp'], keep='first')
-            issues_found += duplicate_timestamps
-        
-        if issues_found > 0:
-            self.cleaning_report['operations'].append({
-                'step': 'validate_timestamp_consistency',
-                'issues_fixed': issues_found
-            })
-        
-        return self.df
+        return df
     
-    def _sort_by_timestamp(self) -> pd.DataFrame:
+    def _remove_invalid_rows(self, df: pd.DataFrame) -> pd.DataFrame:
         """
-        Sort DataFrame by timestamp in ascending order.
+        Remove rows with zero or negative price values.
         
+        Args:
+            df (pd.DataFrame): Input DataFrame
+            
         Returns:
-            pd.DataFrame: Sorted DataFrame
+            pd.DataFrame: DataFrame without invalid rows
         """
-        self.df = self.df.sort_values('timestamp').reset_index(drop=True)
-        return self.df
+        initial_rows = len(df)
+        
+        price_cols = ['open', 'high', 'low', 'close']
+        existing_price_cols = [col for col in price_cols if col in df.columns]
+        
+        if existing_price_cols:
+            df = df[(df[existing_price_cols] > 0).all(axis=1)]
+        
+        rows_removed = initial_rows - len(df)
+        self.cleaning_report['steps']['invalid_rows_removed'] = rows_removed
+        
+        if rows_removed > 0:
+            logger.info(f"Removed {rows_removed} rows with invalid prices")
+        
+        return df
 
 
 def clean_ohlcv_data(df: pd.DataFrame, config: dict = None) -> Tuple[pd.DataFrame, Dict]:
     """
-    Convenience function to clean OHLCV data.
+    Clean OHLCV data using OHLCVCleaner.
     
     Args:
         df (pd.DataFrame): Raw OHLCV data
-        config (dict): Configuration dictionary
+        config (dict): Cleaning configuration
         
     Returns:
         Tuple[pd.DataFrame, Dict]: Cleaned data and report
     """
-    cleaner = DataCleaner(config)
-    return cleaner.clean_ohlcv_data(df)
+    cleaner = OHLCVCleaner(config)
+    return cleaner.clean(df)
