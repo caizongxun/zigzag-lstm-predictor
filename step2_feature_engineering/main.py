@@ -6,6 +6,7 @@ import pandas as pd
 from pathlib import Path
 from datetime import datetime
 import pickle
+from dotenv import load_dotenv
 
 from config import ZIGZAG_CONFIG, SEQUENCE_CONFIG, OUTPUT_CONFIG, TECHNICAL_INDICATORS
 from zigzag import (
@@ -15,6 +16,10 @@ from zigzag import (
 )
 from feature_extractor import FeatureExtractor
 from sequence_builder import prepare_training_data
+from hf_uploader import upload_step2_features
+
+
+load_dotenv()
 
 
 def setup_output_directory() -> Path:
@@ -239,6 +244,57 @@ def process_single_file(csv_path: str, output_dir: Path, timeframe: str = "15m")
     return results
 
 
+def upload_to_huggingface(output_dir: Path, all_results: dict) -> dict:
+    """
+    Upload all feature files to HuggingFace dataset repository.
+
+    Args:
+        output_dir (Path): Local output directory
+        all_results (dict): Processing results for all timeframes
+
+    Returns:
+        dict: Upload results for all timeframes
+    """
+    print("\n" + "="*90)
+    print("STEP 7: UPLOADING FEATURES TO HUGGINGFACE")
+    print("="*90)
+
+    hf_token = os.getenv("HF_TOKEN")
+    if not hf_token:
+        print("\n  WARNING: HF_TOKEN not found in environment variables.")
+        print("  Skipping HuggingFace upload. To enable upload:")
+        print("    1. Set HF_TOKEN environment variable")
+        print("    2. Or create .env file with: HF_TOKEN=your_token_here")
+        return {"skipped": True, "reason": "HF_TOKEN not found"}
+
+    upload_results = {}
+    symbol = "BTCUSDT"
+
+    for timeframe, proc_result in all_results.items():
+        if not proc_result["success"]:
+            print(f"\n  Skipping {timeframe}: Processing failed")
+            upload_results[timeframe] = {"skipped": True, "reason": "Processing failed"}
+            continue
+
+        try:
+            upload_result = upload_step2_features(
+                symbol=symbol,
+                timeframe=timeframe,
+                local_output_dir=str(output_dir),
+                hf_token=hf_token,
+            )
+            upload_results[timeframe] = upload_result
+
+        except Exception as e:
+            print(f"\n  ERROR uploading {timeframe}: {e}")
+            upload_results[timeframe] = {
+                "success": False,
+                "error": str(e),
+            }
+
+    return upload_results
+
+
 def main():
     """
     Main execution function for complete step2 pipeline.
@@ -315,6 +371,8 @@ def main():
         else:
             print(f"  Error: {results['error']}")
 
+    upload_results = upload_to_huggingface(output_dir, all_results)
+
     execution_log = {
         "start_time": datetime.now().isoformat(),
         "config": {
@@ -324,6 +382,7 @@ def main():
             "technical_indicators": TECHNICAL_INDICATORS,
         },
         "results": all_results,
+        "huggingface_upload": upload_results,
     }
 
     log_path = output_dir / "execution_summary.json"
